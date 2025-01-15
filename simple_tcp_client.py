@@ -15,4 +15,4 @@ client.send(b"GET / HTTP/1.1\r\nHost: google.com\r\n\r\n") #using b "" for bytes
 #Receiving some data
 response = client.recv(4096)
 
-print (response)
+print (response.decode())
