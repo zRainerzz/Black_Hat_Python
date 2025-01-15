@@ -10,4 +10,9 @@ client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 client.connect((target_host,target_port))
 
 #Sending some data
-client.send("Get / HTTP/1.1\r\nHost: google.com\r\n\r\n")
+client.send(b"GET / HTTP/1.1\r\nHost: google.com\r\n\r\n") #using b "" for bytes
+
+#Receiving some data
+response = client.recv(4096)
+
+print (response)
