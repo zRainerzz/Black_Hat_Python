@@ -12,6 +12,16 @@ cipher_suite = Fernet(key)
 # Configure logging
 logging.basicConfig(filename='proxy.log', level=logging.INFO, format='%(asctime)s - %(message)s')
 
+def hexdump(src, length=16):
+    result = []
+    digits = 4 if isinstance(src, str) else 2
+    for i in range(0, len(src), length):
+        s = src[i:i+length]
+        hexa = ' '.join([f'{ord(x):0{digits}X}' for x in s])
+        text = ''.join([x if 0x20 <= ord(x) < 0x7F else '.' for x in s])
+        result.append(f'{i:04X}   {hexa:<{length*(digits+1)}}   {text}')
+    print('\n'.join(result))
+
 def receive_from(connection):
     buffer = b""
     connection.settimeout(2)
@@ -21,17 +31,17 @@ def receive_from(connection):
             if not data:
                 break
             buffer += data
-    except:
+    except Exception:
         pass
     return buffer
 
-def modify_request(data):
-    # Add a header to the request
-    return b"Modified-Request: True\r\n" + data
+def request_handler(buffer):
+    # Modify the request packet before sending to the remote server
+    return b"Modified-Request: True\r\n" + buffer
 
-def modify_response(data):
-    # Add a footer to the response
-    return data + b"\r\nModified-Response: True"
+def response_handler(buffer):
+    # Modify the response packet before sending to the client
+    return buffer + b"\r\nModified-Response: True"
 
 def proxy_handler(client_socket, remote_host, remote_port, receive_first):
     remote_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -41,7 +51,8 @@ def proxy_handler(client_socket, remote_host, remote_port, receive_first):
         remote_buffer = receive_from(remote_socket)
         if len(remote_buffer):
             logging.info(f"[<==] Received {len(remote_buffer)} bytes from remote.")
-            remote_buffer = modify_response(remote_buffer)
+            hexdump(remote_buffer)
+            remote_buffer = response_handler(remote_buffer)
             client_socket.send(cipher_suite.encrypt(remote_buffer))
             logging.info("[<==] Sent to client.")
 
@@ -49,14 +60,16 @@ def proxy_handler(client_socket, remote_host, remote_port, receive_first):
         local_buffer = receive_from(client_socket)
         if len(local_buffer):
             logging.info(f"[==>] Received {len(local_buffer)} bytes from client.")
-            local_buffer = modify_request(local_buffer)
+            hexdump(local_buffer)
+            local_buffer = request_handler(local_buffer)
             remote_socket.send(cipher_suite.encrypt(local_buffer))
             logging.info("[==>] Sent to remote.")
 
         remote_buffer = receive_from(remote_socket)
         if len(remote_buffer):
             logging.info(f"[<==] Received {len(remote_buffer)} bytes from remote.")
-            remote_buffer = modify_response(remote_buffer)
+            hexdump(remote_buffer)
+            remote_buffer = response_handler(remote_buffer)
             client_socket.send(cipher_suite.encrypt(remote_buffer))
             logging.info("[<==] Sent to client.")
 
