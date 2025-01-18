@@ -176,7 +176,20 @@ def client_handler(client_socket):
     #Check for command execution.
     if command:
         while True:
-            #Showing simple prompt
+            #Showing a simple prompt.
+            client_socket.send("")
+            client_socket.send(b"<BHP:#> ")
+    
+            # Now we receive until we see a linefeed (enter key)
+            cmd_buffer = ""
+            while "\n" not in cmd_buffer:
+                cmd_buffer += client_socket.recv(1024).decode()
+    
+    # Send back the command output
+    response = run_command(cmd_buffer)
+    
+    # Send back the response
+    client_socket.send(response)
     
 if __name__ == '__main__':
     main()
