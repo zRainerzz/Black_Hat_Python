@@ -40,4 +40,25 @@ def main():
     
     if not len(sys.argv[1:]):
         usage()
-        #Read the command line options.
+    #Read the command line options.
+        
+    try:
+        opts,args = getopt.getopt(sys.argv[1:], "hle:t:p:cu",['help','listen', 'execute', 'target', 'port', 'command', 'upload'])
+    except getopt.GetoptError as err:
+        print(str(err))
+        print('/n')
+        usage()
+        
+    for o, a in opts:
+        if o in ("-h", '--help'):
+            usage()
+        elif o in ("-l", '--listen'):
+            listen = True
+        elif o in ('-e', '--execute'):
+            execute = True
+        elif o in ('-c', "--commandshell"):
+            command = True
+        elif o in ('-u', '--upload'):
+            upload_destination = a
+        elif o in ('-t', '--target'):
+            target = a
