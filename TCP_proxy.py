@@ -48,4 +48,14 @@ def main():
     remote_port = sys.argv[4]
     
     #This tells the proxy to connect & receive data, before sending to remote host.
+    receive_first = sys.argv[5]
     
+    if "True" in receive_first:
+        receive_first = True
+    else:
+        receive_first = False
+    #Now spin up our listening socket.
+    server_loop(local_host, local_port, remote_host, remote_port, receive_first)
+    
+    if __name__ == "__main__":
+        main()
