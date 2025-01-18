@@ -1,20 +1,22 @@
 import sys
 import socket
-import getopt
 import threading
+import getopt
 import subprocess
+import os
+from cryptography.fernet import Fernet
 
-#Defining some global variables.
+# Global variables
 listen = False
 command = False
-upload = False
 execute = ""
 target = ""
 upload_destination = ""
 port = 0
+key = Fernet.generate_key()
+cipher_suite = Fernet(key)
 
 def usage():
-    print("zRainerzz Net Tool (main source: Black Hat Python)")
     print()
     print("Usage: Netcat_Alternative.py -t target_host -p port")
     print("-l --listen                - listen on [host]:[port] for incoming connections")
@@ -29,167 +31,128 @@ def usage():
     print("Netcat_Alternative.py -t 192.168.0.1 -p 5555 -l -e=\"cat /etc/passwd\"")
     print("echo 'ABCDEFGHI' | ./Netcat_Alternative.py -t 192.168.11.12 -p 135")
     sys.exit(0)
-    
-def main():
-    global listen
-    global command
-    global execute
-    global target
-    global upload_destination
-    global port
-    
-    if not len(sys.argv[1:]):
-        usage()
-    #Read the command line options.
-        
-    try:
-        opts,args = getopt.getopt(sys.argv[1:], "hle:t:p:cu",['help','listen', 'execute', 'target', 'port', 'command', 'upload'])
-    except getopt.GetoptError as err:
-        print(str(err))
-        print('/n')
-        usage()
-        
-    for o, a in opts:
-        if o in ("-h", '--help'):
-            usage()
-        elif o in ("-l", '--listen'):
-            listen = True
-        elif o in ('-e', '--execute'):
-            execute = True
-        elif o in ('-c', "--commandshell"):
-            command = True
-        elif o in ('-u', '--upload'):
-            upload_destination = a
-        elif o in ('-t', '--target'):
-            target = a
-        elif o in ('-p', '--port'):
-            port = int(a)
-        else:
-            assert False, f"Unfortunately, this is an unhandled option: {o}"
-            
-            
-        #Are we going to listen or just send some data from stdin?
-        if not listen and len(target) and port > 0:
-            # Read in the buffer from the command line
-            # This will block, so send CTRL-D if not sending input to stdin
-            buffer = sys.stdin.read()
-            
-            # Send data off
-            client_sender(buffer)
-            
-        # We are going to listen and potentially upload things, execute commands, and drop a shell back depending on our command line options above
-        if listen:
-            server_loop()
-            
-def client_sender(buffer):
-    client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    try: 
-        #Connect to our target host
-        client.connect((target, port))
-        
-        if len(buffer):
-            client.send(buffer)
-        while True:
-            #Now wait for data
-            recv_len = 1
-            response = ""
-            while recv_len:
-                data = client.recv(4096)
-                recv_len = len(data)
-                response += data
-                
-                if recv_len < 4096:
-                    break
-            print(response, end="")
-            
-            #Wait for more input
-            buffer = input("")
-            buffer += "\n"
-            
-            # Send it off
-            client.send(buffer)
-    
-    except Exception:
-        print("[*] Exception! Exiting.")
-        #Tear down the connection.
-        client.close()
 
-def server_loop():
-    global target
-    #If no target is specified, we listen to all interfaces.
-    if not len(target):
-        target = '0.0.0.0'
-    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server.bind((target, port))
-    
-    server.listen(5)
-    
-    while True:
-        client_socket, addr = server.accept()
-        #Spin of the thread to handle our new client.
-        client_thread = threading.Thread(target=client_handler, args=(client_socket,))
-        client_thread.start()
-        
 def run_command(command):
-    #Trim the new line.
-    command = command.rstrip()
-    
-    #Run the command get the output back.
+    command = command.strip()
     try:
         output = subprocess.check_output(command, stderr=subprocess.STDOUT, shell=True)
-    except subprocess.CalledProcessError:
-        output = 'Failed to execute the command... \r\n'
-        
-    #Send the ouput back to the client.
+    except subprocess.CalledProcessError as e:
+        output = e.output
     return output
 
 def client_handler(client_socket):
-    global upload
+    global upload_destination
     global execute
     global command
-    
-    #Check for upload.
+
     if len(upload_destination):
-        #Read in all of bytes and write our destination.
-        file_buffer = ''
-        
-        #Keep reading data until it is available.
+        file_buffer = b""
         while True:
-            data = client_socket.recv(4096)
+            data = client_socket.recv(1024)
             if not data:
                 break
             else:
                 file_buffer += data
-                
-        #Now we take these bytes and try to write them out.
+
         try:
-            file_descriptor = open(upload_destination,"wb")
-            file_descriptor.write(file_buffer)
-            file_descriptor.close()
-            
-            #Acknowledge that we wrote the file out.
-            client_socket.send("Successfully saved file to")
-            client_socket.send(f"Successfully saved file to {upload_destination}\r\n")
-        except Exception:
-            client_socket.send(f"Failed to save file to {upload_destination}\r\n")
-    
-    #Check for command execution.
+            with open(upload_destination, "wb") as file_descriptor:
+                file_descriptor.write(file_buffer)
+            client_socket.send(cipher_suite.encrypt(b"Successfully saved file to %s\r\n" % upload_destination.encode()))
+        except Exception as e:
+            client_socket.send(cipher_suite.encrypt(b"Failed to save file to %s\r\n" % upload_destination.encode()))
+
+    if len(execute):
+        output = run_command(execute)
+        client_socket.send(cipher_suite.encrypt(output))
+
     if command:
         while True:
-            #Showing a simple prompt.
-            client_socket.send("")
-            client_socket.send(b"<BHP:#> ")
-    
-            # Now we receive until we see a linefeed (enter key)
+            client_socket.send(cipher_suite.encrypt(b"<BHP:#> "))
             cmd_buffer = ""
             while "\n" not in cmd_buffer:
                 cmd_buffer += client_socket.recv(1024).decode()
-    
-    # Send back the command output
-    response = run_command(cmd_buffer)
-    
-    # Send back the response
-    client_socket.send(response)
-    
-if __name__ == '__main__':
+            response = run_command(cmd_buffer)
+            client_socket.send(cipher_suite.encrypt(response))
+
+def server_loop():
+    global target
+    global port
+
+    if not len(target):
+        target = "0.0.0.0"
+
+    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server.bind((target, port))
+    server.listen(5)
+
+    while True:
+        client_socket, addr = server.accept()
+        client_thread = threading.Thread(target=client_handler, args=(client_socket,))
+        client_thread.start()
+
+def client_sender(buffer):
+    client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        client.connect((target, port))
+        if len(buffer):
+            client.send(cipher_suite.encrypt(buffer.encode()))
+
+        while True:
+            response = b""
+            while True:
+                data = client.recv(4096)
+                if not data:
+                    break
+                response += data
+            print(cipher_suite.decrypt(response).decode(), end="")
+            buffer = input("")
+            buffer += "\n"
+            client.send(cipher_suite.encrypt(buffer.encode()))
+    except Exception as e:
+        print(f"[*] Exception! Exiting. {e}")
+        client.close()
+
+def main():
+    global listen
+    global port
+    global execute
+    global command
+    global upload_destination
+    global target
+
+    if not len(sys.argv[1:]):
+        usage()
+
+    try:
+        opts, args = getopt.getopt(sys.argv[1:], "hle:t:p:cu:", ["help", "listen", "execute=", "target=", "port=", "command", "upload="])
+    except getopt.GetoptError as err:
+        print(str(err))
+        usage()
+
+    for o, a in opts:
+        if o in ("-h", "--help"):
+            usage()
+        elif o in ("-l", "--listen"):
+            listen = True
+        elif o in ("-e", "--execute"):
+            execute = a
+        elif o in ("-c", "--command"):
+            command = True
+        elif o in ("-u", "--upload"):
+            upload_destination = a
+        elif o in ("-t", "--target"):
+            target = a
+        elif o in ("-p", "--port"):
+            port = int(a)
+        else:
+            assert False, "Unhandled Option"
+
+    if not listen and len(target) and port > 0:
+        buffer = sys.stdin.read()
+        client_sender(buffer)
+
+    if listen:
+        server_loop()
+
+if __name__ == "__main__":
     main()
