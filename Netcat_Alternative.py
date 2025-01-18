@@ -62,3 +62,42 @@ def main():
             upload_destination = a
         elif o in ('-t', '--target'):
             target = a
+        elif o in ('-p', '--port'):
+            port = int(a)
+        else:
+            assert False, f"Unfortunately, this is an unhandled option: {o}"
+            
+            
+        #Are we going to listen or just send some data from stdin?
+        if not listen and len(target) and port > 0:
+            # Read in the buffer from the command line
+            # This will block, so send CTRL-D if not sending input to stdin
+            buffer = sys.stdin.read()
+            
+            # Send data off
+            client_sender(buffer)
+            
+        # We are going to listen and potentially upload things, execute commands, and drop a shell back depending on our command line options above
+        if listen:
+            server_loop()
+            
+def client_sender(buffer):
+    client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try: 
+        #Connect to our target host
+        client.connect((target, port))
+        
+        if len(buffer):
+            client.send(buffer)
+        while True:
+            #Now wait for data
+            recv_len = 1
+            response = ""
+            while recv_len:
+                data = client.recv(4096)
+                recv_len = len(data)
+
+
+
+if __name__ == '__main__':
+    main()
