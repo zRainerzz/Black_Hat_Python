@@ -96,8 +96,37 @@ def client_sender(buffer):
             while recv_len:
                 data = client.recv(4096)
                 recv_len = len(data)
+                response += data
+                
+                if recv_len < 4096:
+                    break
+            print(response, end="")
+            
+            #Wait for more input
+            buffer = input("")
+            buffer += "\n"
+            
+            # Send it off
+            client.send(buffer)
+    
+    except:
+        print("[*] Exception! Exiting.")
+        #Tear down the connection.
+        client.close()
 
-
-
+def server_loop():
+    global target
+    #If no target is specified, we listen to all interfaces.
+    if not len(target):
+        target = '0.0.0.0'
+    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server.bind((target, port))
+    
+    server.listen(5)
+    
+    while True:
+        client_socket, addr = server.accept()
+        #Spin of the thread to handle our new client.
+    
 if __name__ == '__main__':
     main()
